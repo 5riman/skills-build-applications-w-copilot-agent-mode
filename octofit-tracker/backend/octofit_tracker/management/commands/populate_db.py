@@ -1,46 +1,60 @@
 from django.core.management.base import BaseCommand
+from octofit_tracker.models import User, Team, Activity, Leaderboard, Workout
+from octofit_tracker.test_data import get_test_data
+from django.conf import settings
 from pymongo import MongoClient
 
 class Command(BaseCommand):
-    help = 'Populate the octofit_db database with test data'
+    help = 'Populate the database with test data for users, teams, activities, leaderboard, and workouts'
 
     def handle(self, *args, **kwargs):
-        client = MongoClient()
-        db = client['octofit_db']
+        # Connect to MongoDB
+        client = MongoClient(settings.DATABASES['default']['HOST'], settings.DATABASES['default']['PORT'])
+        db = client[settings.DATABASES['default']['NAME']]
 
-        # Test data for users
-        users = [
-            {"email": "user1@example.com", "name": "User One"},
-            {"email": "user2@example.com", "name": "User Two"},
-        ]
-        db.users.insert_many(users)
+        # Drop existing collections
+        db.users.drop()
+        db.teams.drop()
+        db.activities.drop()
+        db.leaderboard.drop()
+        db.workouts.drop()
 
-        # Test data for teams
-        teams = [
-            {"name": "Team Alpha"},
-            {"name": "Team Beta"},
-        ]
-        db.teams.insert_many(teams)
+        # Clear existing data
+        User.objects.all().delete()
+        Team.objects.all().delete()
+        Activity.objects.all().delete()
+        Leaderboard.objects.all().delete()
+        Workout.objects.all().delete()
 
-        # Test data for activities
-        activities = [
-            {"activity_id": "A1", "user": "user1@example.com", "type": "Running", "duration": 30},
-            {"activity_id": "A2", "user": "user2@example.com", "type": "Cycling", "duration": 45},
-        ]
-        db.activity.insert_many(activities)
+        # Get test data
+        test_data = get_test_data()
 
-        # Test data for leaderboard
-        leaderboard = [
-            {"leaderboard_id": "L1", "team": "Team Alpha", "points": 100},
-            {"leaderboard_id": "L2", "team": "Team Beta", "points": 80},
-        ]
-        db.leaderboard.insert_many(leaderboard)
+        # Populate users
+        for user_data in test_data['users']:
+            User.objects.update_or_create(username=user_data['username'], defaults=user_data)
 
-        # Test data for workouts
-        workouts = [
-            {"workout_id": "W1", "name": "Workout One", "description": "Description for Workout One"},
-            {"workout_id": "W2", "name": "Workout Two", "description": "Description for Workout Two"},
-        ]
-        db.workouts.insert_many(workouts)
+        # Populate teams
+        teams = [Team(**team) for team in test_data['teams']]
+        Team.objects.bulk_create(teams)
 
-        self.stdout.write(self.style.SUCCESS('Successfully populated the database with test data'))
+        # Populate activities
+        activities = []
+        for activity in test_data['activities']:
+            user_instance = User.objects.get(username=activity['user'])
+            activity['user'] = user_instance
+            activities.append(Activity(**activity))
+        Activity.objects.bulk_create(activities)
+
+        # Populate leaderboard
+        leaderboard_entries = []
+        for entry in test_data['leaderboard']:
+            user_instance = User.objects.get(username=entry['user'])
+            entry['user'] = user_instance
+            leaderboard_entries.append(Leaderboard(**entry))
+        Leaderboard.objects.bulk_create(leaderboard_entries)
+
+        # Populate workouts
+        workouts = [Workout(**workout) for workout in test_data['workouts']]
+        Workout.objects.bulk_create(workouts)
+
+        self.stdout.write(self.style.SUCCESS('Successfully populated the database with test data.'))
